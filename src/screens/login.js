@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase";
+import { ensureUserDocument } from "../services/userService";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -22,38 +25,62 @@ export default function LoginScreen({ navigation }) {
     return regex.test(value);
   }
 
-  const handleLogin = () => {
-    setError("");
-    setLoading(true);
+  const handleLogin = async () => {
+  setError("");
+  setLoading(true);
 
-    if (!email || !password) {
-      setError("Por favor, preencha todos os campos");
-      setLoading(false);
-      return;
+  if (!email || !password) {
+    setError("Por favor, preencha todos os campos");
+    setLoading(false);
+    return;
+  }
+
+  if (!validateEmail(email)) {
+    setError("Email inválido");
+    setLoading(false);
+    return;
+  }
+
+  if (password.length < 6) {
+    setError("Senha deve ter no mínimo 6 caracteres");
+    setLoading(false);
+    return;
+  }
+
+  try {
+    // Login REAL no Firebase
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    console.log("Usuário logado:", cred.user.uid);
+
+    // Garante que o documento do usuário exista com saldo
+    const profile = await ensureUserDocument(cred.user);
+    console.log("Perfil carregado/criado:", profile);
+
+    // Vai pra Home
+    navigation.replace("Home");
+  } catch (err) {
+    console.log("Erro no login:", err.code, err.message);
+
+    if (err.code === "auth/user-not-found") {
+      setError("Usuário não encontrado");
+    } else if (
+      err.code === "auth/wrong-password" ||
+      err.code === "auth/invalid-credential"
+    ) {
+      setError("Email ou senha incorretos");
+    } else if (err.code === "auth/too-many-requests") {
+      setError("Muitas tentativas. Tente novamente mais tarde.");
+    } else {
+      setError("Erro ao entrar. Tente novamente.");
     }
-
-    if (!validateEmail(email)) {
-      setError("Email inválido");
-      setLoading(false);
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Senha deve ter no mínimo 6 caracteres");
-      setLoading(false);
-      return;
-    }
-
-    // simula login bem-sucedido
-    setTimeout(() => {
-      setLoading(false);
-      // depois a gente troca isso por algo com AsyncStorage se precisar
-      navigation.replace("Home");
-    }, 1000);
-  };
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleFillDemo = () => {
-    setEmail("demo@example.com");
+    // já preenche com o usuário que você criou no Firebase
+    setEmail("admin@gmail.com");
     setPassword("123456");
   };
 
@@ -142,7 +169,7 @@ export default function LoginScreen({ navigation }) {
           {/* Demo */}
           <View style={styles.demoSection}>
             <Text style={styles.demoText}>
-              Demo: Use qualquer email e senha (min. 6 caracteres)
+              Demo: Use o usuário de teste cadastrado no Firebase
             </Text>
 
             <TouchableOpacity
@@ -159,10 +186,11 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
+// (styles exatamente como você já tinha)
 const styles = StyleSheet.create({
   loginRoot: {
     flex: 1,
-    backgroundColor: "#020617", // bg-slate-900
+    backgroundColor: "#020617",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
@@ -172,11 +200,11 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   loginCard: {
-    backgroundColor: "#0f172a", // slate-800
+    backgroundColor: "#0f172a",
     borderRadius: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: "#1f2937", // slate-700
+    borderColor: "#1f2937",
     shadowColor: "#000",
     shadowOpacity: 0.35,
     shadowRadius: 16,

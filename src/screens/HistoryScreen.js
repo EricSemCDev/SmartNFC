@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,61 +8,29 @@ import {
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 
-const TRANSACTIONS = [
-  {
-    id: 1,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "Ônibus",
-    amount: -4.8,
-    date: "Hoje",
-  },
-  {
-    id: 2,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "5 de mai.",
-    amount: -4.8,
-    date: "5 de mai",
-  },
-  {
-    id: 3,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "4 de nov.",
-    amount: -4.8,
-    date: "4 de nov",
-  },
-  {
-    id: 4,
-    type: "recarga",
-    title: "Recarga",
-    subtitle: "4 de out.",
-    amount: 4.8,
-    date: "4 de out",
-  },
-  {
-    id: 5,
-    type: "recarga",
-    title: "Recarga",
-    subtitle: "4 de out.",
-    amount: 4.8,
-    date: "4 de out",
-  },
-  {
-    id: 6,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "4 de out.",
-    amount: -4.8,
-    date: "4 de out",
-  },
-];
+import { auth } from "../firebase";
+import { getUserTransactions } from "../services/transactionService";
 
 export default function HistoryScreen({ navigation }) {
+  const [list, setList] = useState([]);
+
   const handleBack = () => {
     navigation.goBack();
   };
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const uid = auth.currentUser.uid;
+        const history = await getUserTransactions(uid);
+        setList(history);
+      } catch (e) {
+        console.log("Erro ao carregar histórico:", e);
+      }
+    }
+
+    load();
+  }, []);
 
   return (
     <View style={styles.root}>
@@ -73,7 +41,7 @@ export default function HistoryScreen({ navigation }) {
       >
         <View style={styles.contentWrapper}>
           {/* Header */}
-          <View className="header" style={styles.header}>
+          <View style={styles.header}>
             <TouchableOpacity
               onPress={handleBack}
               activeOpacity={0.7}
@@ -87,60 +55,47 @@ export default function HistoryScreen({ navigation }) {
 
           {/* Transactions */}
           <View style={styles.list}>
-            {TRANSACTIONS.map((transaction) => {
-              const isPassagem = transaction.type === "passagem";
-              const isPositive = transaction.amount > 0;
+            {list.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionCard}>
+                <View
+                  style={[
+                    styles.transactionIconWrapper,
+                    transaction.type === "passagem"
+                      ? styles.iconBgPassagem
+                      : styles.iconBgRecarga,
+                  ]}
+                >
+                  {transaction.type === "passagem" ? (
+                    <Ionicons name="bus" size={24} color="#ef4444" />
+                  ) : (
+                    <Feather name="credit-card" size={24} color="#3b82f6" />
+                  )}
+                </View>
 
-              return (
-                <View key={transaction.id} style={styles.card}>
-                  {/* Icon */}
-                  <View
+                <View style={styles.transactionInfo}>
+                  <Text style={styles.transactionTitle}>
+                    {transaction.type === "passagem" ? "Passagem" : "Recarga"}
+                  </Text>
+                  <Text style={styles.transactionSubtitle}>
+                    {new Date(transaction.timestamp).toLocaleString("pt-BR")}
+                  </Text>
+                </View>
+
+                <View style={styles.amountWrapper}>
+                  <Text
                     style={[
-                      styles.iconWrapper,
-                      isPassagem
-                        ? styles.iconBgPassagem
-                        : styles.iconBgRecarga,
+                      styles.transactionAmount,
+                      transaction.amount > 0
+                        ? styles.amountPositive
+                        : styles.amountNegative,
                     ]}
                   >
-                    {isPassagem ? (
-                      <Ionicons
-                        name="bus"
-                        size={24}
-                        color={isPassagem ? "#ef4444" : "#3b82f6"}
-                      />
-                    ) : (
-                      <Feather
-                        name="credit-card"
-                        size={24}
-                        color={isPassagem ? "#ef4444" : "#3b82f6"}
-                      />
-                    )}
-                  </View>
-
-                  {/* Info */}
-                  <View style={styles.info}>
-                    <Text style={styles.title}>{transaction.title}</Text>
-                    <Text style={styles.subtitle}>{transaction.subtitle}</Text>
-                  </View>
-
-                  {/* Amount + date */}
-                  <View style={styles.amountWrapper}>
-                    <Text
-                      style={[
-                        styles.amount,
-                        isPositive
-                          ? styles.amountPositive
-                          : styles.amountNegative,
-                      ]}
-                    >
-                      {isPositive ? "+" : ""}
-                      R$ {Math.abs(transaction.amount).toFixed(2)}
-                    </Text>
-                    <Text style={styles.date}>{transaction.date}</Text>
-                  </View>
+                    {transaction.amount > 0 ? "+" : ""}
+                    R$ {Math.abs(transaction.amount).toFixed(2)}
+                  </Text>
                 </View>
-              );
-            })}
+              </View>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -184,7 +139,9 @@ const styles = StyleSheet.create({
   list: {
     gap: 10,
   },
-  card: {
+
+  // Card
+  transactionCard: {
     backgroundColor: "#0f172a", // slate-800
     borderRadius: 12,
     paddingVertical: 10,
@@ -197,7 +154,7 @@ const styles = StyleSheet.create({
   },
 
   // Icon
-  iconWrapper: {
+  transactionIconWrapper: {
     width: 48,
     height: 48,
     borderRadius: 12,
@@ -212,16 +169,16 @@ const styles = StyleSheet.create({
   },
 
   // Info
-  info: {
+  transactionInfo: {
     flex: 1,
   },
-  title: {
+  transactionTitle: {
     color: "#f9fafb",
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 2,
   },
-  subtitle: {
+  transactionSubtitle: {
     color: "#9ca3af",
     fontSize: 12,
   },
@@ -230,7 +187,7 @@ const styles = StyleSheet.create({
   amountWrapper: {
     alignItems: "flex-end",
   },
-  amount: {
+  transactionAmount: {
     fontSize: 14,
     fontWeight: "600",
   },

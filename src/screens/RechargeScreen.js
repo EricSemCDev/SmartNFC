@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,45 +11,68 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 
+import { rechargeBalance } from "../services/firebaseRecharge";
+import { auth } from "../firebase";
+import { db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+
 const PRESET_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
 export default function RechargeScreen({ navigation }) {
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [customAmount, setCustomAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [currentBalance, setCurrentBalance] = useState(0)
 
-  // por enquanto, vamos só simular o saldo atual (igual ao web inicial)
-  const currentBalance = 1046.5;
+  useEffect(() => {
+    async function loadBalance() {
+      try {
+        const uid = auth.currentUser.uid;
+        const snap = await getDoc(doc(db, "users", uid));
+
+        if (snap.exists()) {
+          setCurrentBalance(snap.data().balance || 0);
+        }
+      } catch (e) {
+        console.log("Erro ao carregar saldo:", e);
+      }
+    }
+
+    loadBalance();
+  }, []);
+
   const amount =
     selectedAmount || (customAmount ? parseFloat(customAmount) : 0);
+
   const newBalance = currentBalance + (amount || 0);
 
-  const handleRecharge = () => {
-    const value = amount;
+  const handleRecharge = async () => {
+    if (!selectedAmount && !customAmount) {
+      alert("Selecione ou digite um valor");
+      return;
+    }
 
-    if (!value || value <= 0) {
-      Alert.alert("Valor inválido", "Selecione um valor válido.");
+    const amount = selectedAmount || parseFloat(customAmount);
+
+    if (amount <= 0) {
+      alert("Valor inválido");
       return;
     }
 
     setLoading(true);
 
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const uid = auth.currentUser.uid;
 
-      // aqui no web fazia localStorage.setItem("balance", ...)
-      // depois, se quiser, a gente liga isso num contexto/AsyncStorage
-      Alert.alert(
-        "Recarga realizada",
-        `Recarga de R$ ${value.toFixed(2)} realizada com sucesso!`,
-        [
-          {
-            text: "OK",
-            onPress: () => navigation.navigate("Home"),
-          },
-        ]
-      );
-    }, 1500);
+      const updatedBalance = await rechargeBalance(uid, amount);
+
+      // 🔥 Atualiza a Home com o saldo real do Firebase
+      navigation.navigate("Home", { newBalance: updatedBalance });
+    } catch (error) {
+      alert("Erro ao recarregar: " + error.message);
+    }
+
+    setLoading(false);
   };
 
   const handleBack = () => {
@@ -57,7 +80,6 @@ export default function RechargeScreen({ navigation }) {
   };
 
   const handleCustomChange = (text) => {
-    // permite só números e ponto
     const sanitized = text.replace(",", ".").replace(/[^0-9.]/g, "");
     setCustomAmount(sanitized);
     setSelectedAmount(null);
@@ -139,9 +161,7 @@ export default function RechargeScreen({ navigation }) {
           <View style={[styles.card, styles.summaryCard]}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Valor da Recarga</Text>
-              <Text style={styles.summaryAmount}>
-                R$ {amount.toFixed(2)}
-              </Text>
+              <Text style={styles.summaryAmount}>R$ {amount.toFixed(2)}</Text>
             </View>
 
             <View style={styles.summaryDivider} />
@@ -161,7 +181,7 @@ export default function RechargeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Recharge Button */}
+          {/* Button */}
           <TouchableOpacity
             style={[
               styles.primaryButton,
@@ -184,12 +204,13 @@ export default function RechargeScreen({ navigation }) {
                   color="#ffffff"
                   style={{ marginRight: 8 }}
                 />
-                <Text style={styles.primaryButtonText}>Recarregar Agora</Text>
+                <Text style={styles.primaryButtonText}>
+                  Recarregar Agora
+                </Text>
               </>
             )}
           </TouchableOpacity>
 
-          {/* Info */}
           <Text style={styles.infoText}>Transação segura e instantânea</Text>
         </View>
       </ScrollView>

@@ -8,78 +8,104 @@ import {
 } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 
+// === IMPORTS DO FIREBASE ===
+import { auth, db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+
+import { getUserTransactions } from "../services/transactionService";
+
 const RECENT_TRANSACTIONS = [
-  {
-    id: 1,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "Ônibus",
-    amount: -4.8,
-  },
-  {
-    id: 2,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "5 de mai.",
-    amount: -4.8,
-  },
-  {
-    id: 3,
-    type: "passagem",
-    title: "Passagem",
-    subtitle: "4 de nov.",
-    amount: -4.8,
-  },
-  {
-    id: 4,
-    type: "recarga",
-    title: "Recarga",
-    subtitle: "4 de out.",
-    amount: 4.8,
-  },
-  {
-    id: 5,
-    type: "recarga",
-    title: "Recarga",
-    subtitle: "4 de out.",
-    amount: 4.8,
-  },
+  { id: 1, type: "passagem", title: "Passagem", subtitle: "Ônibus", amount: -4.8 },
+  { id: 2, type: "passagem", title: "Passagem", subtitle: "5 de mai.", amount: -4.8 },
+  { id: 3, type: "passagem", title: "Passagem", subtitle: "4 de nov.", amount: -4.8 },
+  { id: 4, type: "recarga", title: "Recarga", subtitle: "4 de out.", amount: 4.8 },
+  { id: 5, type: "recarga", title: "Recarga", subtitle: "4 de out.", amount: 4.8 },
 ];
 
 export default function HomeScreen({ navigation }) {
   const [showBalance, setShowBalance] = useState(true);
   const [nfcActive, setNfcActive] = useState(false);
+
   const [user, setUser] = useState(null);
   const [balance, setBalance] = useState("0.00");
+  const [loading, setLoading] = useState(true);
+
+  const [recent, setRecent] = useState([]);
 
   useEffect(() => {
-    // Web: pegava do localStorage
-    // Aqui, por enquanto, vamos simular os dados do login
-    // Depois podemos ligar com AsyncStorage se você quiser
-    setUser({ name: "Eric" });
-    setBalance("1046.50");
+    async function loadUserData() {
+      try {
+        const currentUser = auth.currentUser;
+
+        if (!currentUser) {
+          navigation.replace("Login");
+          return;
+        }
+
+        // pega o documento users/{uid}
+        const ref = doc(db, "users", currentUser.uid);
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          console.log("⚠️ Documento do usuário não encontrado no Firestore.");
+          setUser({ name: "Usuário" });
+          setBalance("0.00");
+        } else {
+          const data = snap.data();
+          setUser({ name: data.name || "Usuário" });
+          setBalance(Number(data.balance).toFixed(2));
+        }
+      } catch (err) {
+        console.log("Erro ao carregar usuário:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadUserData();
+  }, []);
+
+  useEffect(() => {
+  async function loadTransactions() {
+    try {
+      const uid = auth.currentUser.uid;
+      const list = await getUserTransactions(uid);
+
+      setRecent(list.slice(0, 5)); // só os 5 primeiros
+    } catch (e) {
+      console.log("Erro ao carregar transações:", e);
+    }
+  }
+
+    loadTransactions();
   }, []);
 
   const handlePayment = () => {
-    // Web: ativava NFC e, no onComplete, debitava 4.8
-    // Aqui vamos simplificar: apertou PAGAR → debita 4.8
     const newBalance = (parseFloat(balance) - 4.8).toFixed(2);
     setBalance(newBalance);
     setNfcActive(true);
     setTimeout(() => setNfcActive(false), 1500);
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingRoot}>
+        <Text style={styles.loadingText}>Carregando saldo...</Text>
+      </View>
+    );
+  }
+
   if (!user) {
     return (
       <View style={styles.loadingRoot}>
-        <Text style={styles.loadingText}>Carregando...</Text>
+        <Text style={styles.loadingText}>Carregando usuário...</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.root}>
-      {/* “Overlay” simples de NFC ativo */}
+      {/* NFC Overlay */}
       {nfcActive && (
         <View style={styles.nfcOverlay}>
           <View style={styles.nfcCard}>
@@ -155,7 +181,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Payment Button */}
+        {/* Pagamento */}
         <View style={styles.payWrapper}>
           <TouchableOpacity
             style={styles.payButton}
@@ -183,58 +209,45 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.transactionsList}>
-            {RECENT_TRANSACTIONS.map((transaction) => {
-              const isPassagem = transaction.type === "passagem";
-              const isPositive = transaction.amount > 0;
+            {recent.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionCard}>
+                <View
+                  style={[
+                    styles.transactionIconWrapper,
+                    transaction.type === "passagem"
+                      ? styles.iconBgPassagem
+                      : styles.iconBgRecarga,
+                  ]}
+                >
+                  {transaction.type === "passagem" ? (
+                    <Ionicons name="bus" size={24} color="#ef4444" />
+                  ) : (
+                    <Feather name="credit-card" size={24} color="#3b82f6" />
+                  )}
+                </View>
 
-              return (
-                <View key={transaction.id} style={styles.transactionCard}>
-                  <View
-                    style={[
-                      styles.transactionIconWrapper,
-                      isPassagem
-                        ? styles.iconBgPassagem
-                        : styles.iconBgRecarga,
-                    ]}
-                  >
-                    {isPassagem ? (
-                      <Ionicons
-                        name="bus"
-                        size={24}
-                        color={isPassagem ? "#ef4444" : "#3b82f6"}
-                      />
-                    ) : (
-                      <Feather
-                        name="credit-card"
-                        size={24}
-                        color={isPassagem ? "#ef4444" : "#3b82f6"}
-                      />
-                    )}
-                  </View>
+                <View style={styles.transactionInfo}>
+                  <Text style={styles.transactionTitle}>
+                    {transaction.type === "passagem" ? "Passagem" : "Recarga"}
+                  </Text>
 
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionTitle}>
-                      {transaction.title}
-                    </Text>
-                    <Text style={styles.transactionSubtitle}>
-                      {transaction.subtitle}
-                    </Text>
-                  </View>
-
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      isPositive
-                        ? styles.amountPositive
-                        : styles.amountNegative,
-                    ]}
-                  >
-                    {isPositive ? "+" : ""}
-                    R$ {Math.abs(transaction.amount).toFixed(2)}
+                  <Text style={styles.transactionSubtitle}>
+                    {new Date(transaction.timestamp).toLocaleDateString("pt-BR")}
                   </Text>
                 </View>
-              );
-            })}
+
+                <Text
+                  style={[
+                    styles.transactionAmount,
+                    transaction.amount > 0 ? styles.amountPositive : styles.amountNegative,
+                  ]}
+                >
+                  {transaction.amount > 0 ? "+" : ""}
+                  R$ {Math.abs(transaction.amount).toFixed(2)}
+                </Text>
+              </View>
+            ))}
+
           </View>
         </View>
       </ScrollView>
